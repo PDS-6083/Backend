@@ -59,8 +59,7 @@ Once the server is running, you can access:
 
 **User Types:**
 - `admin`
-- `pilot`
-- `cabin crew`
+- `crew` (Same type for both pilot and cabin crew)
 - `scheduler`
 - `engineer`
 
