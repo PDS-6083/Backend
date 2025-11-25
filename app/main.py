@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
+from app.database.connection import init_db
 
 app = FastAPI(
     title="AeroSync API",
@@ -16,6 +17,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+init_db()
 
 @app.get("/health")
 async def health_check():
