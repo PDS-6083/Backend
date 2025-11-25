@@ -7,6 +7,63 @@ Backend API for AeroSync built with Python FastAPI.
 - **Backend**: Python FastAPI
 - **Frontend**: Next.js
 
+## Project Structure
+
+```
+backend/
+├── app/
+│   ├── __init__.py
+│   ├── main.py                 # FastAPI application entry point
+│   ├── config.py               # Configuration settings
+│   │
+│   ├── admin/                  # Admin-specific actions and routes
+│   │   ├── __init__.py
+│   │   ├── routes.py
+│   │   └── schemas.py
+│   │
+│   ├── crew/                   # Crew actions (pilot and cabin crew)
+│   │   ├── __init__.py
+│   │   ├── routes.py
+│   │   └── schemas.py
+│   │
+│   ├── engineer/               # Engineer-specific actions and routes
+│   │   ├── __init__.py
+│   │   ├── routes.py
+│   │   └── schemas.py
+│   │
+│   ├── scheduler/              # Scheduler-specific actions and routes
+│   │   ├── __init__.py
+│   │   ├── routes.py
+│   │   └── schemas.py
+│   │
+│   ├── auth/                   # Authentication and JWT token verification
+│   │   ├── __init__.py
+│   │   ├── routes.py           # Login, logout endpoints
+│   │   ├── dependencies.py     # JWT token verification dependencies
+│   │   ├── jwt_handler.py      # JWT token creation and validation
+│   │   └── schemas.py
+│   │
+│   ├── database/               # Database configuration and models
+│   │   ├── __init__.py
+│   │   ├── connection.py       # Database connection setup
+│   │   ├── models.py           # SQLAlchemy models
+│   │   └── migrations/         # Database migrations (Alembic)
+│   │
+│   ├── models/                 # Pydantic schemas for request/response
+│   │   ├── __init__.py
+│   │   └── user.py
+│   │
+│   └── utils/                  # Utility functions
+│       ├── __init__.py
+│       └── helpers.py
+│
+├── .env                        # Environment variables 
+├── .env.example               # Example environment variables
+├── requirements.txt           # Python dependencies
+├── README.md                  # Project documentation
+└── .gitignore                 # Git ignore rules
+```
+
 ## Getting Started
 
 ### Prerequisites
@@ -17,20 +74,27 @@ Backend API for AeroSync built with Python FastAPI.
 ### Installation
 
 1. Clone the repository
-2. Install dependencies:
+2. Create and activate a virtual environment:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-3. Copy the environment variables file:
+4. Copy the environment variables file:
    ```bash
    cp .env.example .env
    ```
-4. Update `.env` with your configuration values
+5. Update `.env` with your configuration values
 
 ### Running the Server
 
+Make sure your virtual environment is activated, then run:
+
 ```bash
-uvicorn main:app --reload
+uvicorn app.main:app --reload
 ```
 
 The API will be available at `http://localhost:8000`
@@ -93,7 +157,7 @@ Once the server is running, you can access:
 ```json
 {
   "success": false,
-  "message": "Invalid user type. Must be one of: admin, pilot, cabin crew, scheduler, engineer",
+  "message": "Invalid user type. Must be one of: admin, crew, scheduler, engineer",
   "error": "INVALID_USER_TYPE"
 }
 ```
@@ -129,7 +193,7 @@ The JWT token consists of three parts: `header.payload.signature`
 **Claims Description:**
 - `sub` (Subject): User's email address
 - `user_id`: Unique user identifier
-- `user_type`: User role (admin, pilot, cabin crew, scheduler, engineer)
+- `user_type`: User role (admin, crew, scheduler, engineer)
 - `iat` (Issued At): Unix timestamp when the token was issued
 - `exp` (Expiration): Unix timestamp when the token expires
 
