@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database.connection import init_db
+from app.auth.routes import router as auth_router
 
 app = FastAPI(
     title="AeroSync API",
@@ -18,6 +19,8 @@ app.add_middleware(
 )
 
 init_db()
+
+app.include_router(auth_router)
 
 @app.get("/health")
 async def health_check():
