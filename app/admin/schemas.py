@@ -38,3 +38,30 @@ class AircraftResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class RouteCreateRequest(BaseModel):
+    source_airport_code: str
+    destination_airport_code: str
+    approved_capacity: int
+
+
+class RouteUpdateRequest(BaseModel):
+    route_id: int
+    source_airport_code: str | None = None
+    destination_airport_code: str | None = None
+    approved_capacity: int | None = None
+
+
+class RouteDeleteRequest(BaseModel):
+    route_id: int
+
+
+class RouteResponse(BaseModel):
+    route_id: int
+    source_airport_code: str
+    destination_airport_code: str
+    approved_capacity: int
+
+    class Config:
+        from_attributes = True
+
