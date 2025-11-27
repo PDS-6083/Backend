@@ -16,6 +16,18 @@ class AircraftCreateRequest(BaseModel):
     status: AircraftStatus = AircraftStatus.ACTIVE
 
 
+class AircraftUpdateRequest(BaseModel):
+    registration_number: str
+    aircraft_company: str | None = None
+    model: str | None = None
+    capacity: int | None = None
+    status: AircraftStatus | None = None
+
+
+class AircraftDeleteRequest(BaseModel):
+    registration_number: str
+
+
 class AircraftResponse(BaseModel):
     registration_number: str
     aircraft_company: str

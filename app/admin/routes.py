@@ -6,7 +6,7 @@ from app.auth.dependencies import get_current_user
 from app.auth.schemas import UserInfo, UserType
 from app.database.connection import get_db
 from app.database.models import Aircraft, AircraftStatus
-from app.admin.schemas import AircraftCreateRequest, AircraftResponse
+from app.admin.schemas import AircraftCreateRequest, AircraftResponse, AircraftUpdateRequest, AircraftDeleteRequest
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -114,4 +114,81 @@ async def get_aircraft(
         capacity=aircraft.capacity,
         status=aircraft.status.value,
     )
+
+
+@router.post("/aircraft/update", response_model=AircraftResponse)
+async def update_aircraft(
+    aircraft_data: AircraftUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: UserInfo = Depends(require_admin),
+):
+    """
+    Update an existing aircraft in the database.
+    Only administrators can perform this action.
+    All fields except registration_number are optional - only provided fields will be updated.
+    """
+    # Find the aircraft
+    aircraft = db.query(Aircraft).filter(
+        Aircraft.registration_number == aircraft_data.registration_number
+    ).first()
+    
+    if not aircraft:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Aircraft with registration number '{aircraft_data.registration_number}' not found",
+        )
+    
+    # Update only the fields that are provided
+    if aircraft_data.aircraft_company is not None:
+        aircraft.aircraft_company = aircraft_data.aircraft_company
+    
+    if aircraft_data.model is not None:
+        aircraft.model = aircraft_data.model
+    
+    if aircraft_data.capacity is not None:
+        aircraft.capacity = aircraft_data.capacity
+    
+    if aircraft_data.status is not None:
+        aircraft.status = AircraftStatus(aircraft_data.status.value)
+    
+    db.commit()
+    db.refresh(aircraft)
+    
+    return AircraftResponse(
+        registration_number=aircraft.registration_number,
+        aircraft_company=aircraft.aircraft_company,
+        model=aircraft.model,
+        capacity=aircraft.capacity,
+        status=aircraft.status.value,
+    )
+
+#todo check any dependencies on this acft like flghts, creww, etc
+@router.post("/aircraft/delete")
+async def delete_aircraft(
+    aircraft_data: AircraftDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: UserInfo = Depends(require_admin),
+):
+    """
+    Delete an aircraft from the database.
+    Only administrators can perform this action.
+    """
+    # Find the aircraft
+    aircraft = db.query(Aircraft).filter(
+        Aircraft.registration_number == aircraft_data.registration_number
+    ).first()
+    
+    if not aircraft:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Aircraft with registration number '{aircraft_data.registration_number}' not found",
+        )
+    
+    db.delete(aircraft)
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Aircraft with registration number '{aircraft_data.registration_number}' has been deleted"
+    }
 
