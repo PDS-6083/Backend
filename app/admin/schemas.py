@@ -65,3 +65,14 @@ class RouteResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class AirportResponse(BaseModel):
+    airport_code: str
+    city: str
+    state: str | None
+    country: str
+    airport_name: str
+
+    class Config:
+        from_attributes = True
+

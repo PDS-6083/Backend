@@ -8,7 +8,8 @@ from app.database.connection import get_db
 from app.database.models import Aircraft, AircraftStatus, Route, Airport
 from app.admin.schemas import (
     AircraftCreateRequest, AircraftResponse, AircraftUpdateRequest, AircraftDeleteRequest,
-    RouteCreateRequest, RouteResponse, RouteUpdateRequest, RouteDeleteRequest
+    RouteCreateRequest, RouteResponse, RouteUpdateRequest, RouteDeleteRequest,
+    AirportResponse
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -420,4 +421,71 @@ async def delete_route(
         "success": True,
         "message": f"Route with ID '{route_data.route_id}' has been deleted"
     }
+
+
+
+
+@router.get("/airport", response_model=List[AirportResponse])
+async def get_all_airports(
+    db: Session = Depends(get_db),
+    current_user: UserInfo = Depends(require_admin),
+):
+    """
+    Get all airports from the database.
+    Only administrators can access this endpoint.
+    """
+    airports = db.query(Airport).all()
+    return [
+        AirportResponse(
+            airport_code=airport.airport_code,
+            city=airport.city,
+            state=airport.state,
+            country=airport.country,
+            airport_name=airport.airport_name,
+        )
+        for airport in airports
+    ]
+
+
+@router.get("/airport/{airport_code}", response_model=AirportResponse)
+async def get_airport_by_code(
+    airport_code: str,
+    db: Session = Depends(get_db),
+    current_user: UserInfo = Depends(require_admin),
+):
+    """
+    Get a specific airport by airport code.
+    Only administrators can access this endpoint.
+    """
+    airport = db.query(Airport).filter(
+        Airport.airport_code == airport_code.upper()
+    ).first()
+    
+    if not airport:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Airport with code '{airport_code}' not found",
+        )
+    
+    return AirportResponse(
+        airport_code=airport.airport_code,
+        city=airport.city,
+        state=airport.state,
+        country=airport.country,
+        airport_name=airport.airport_name,
+    )
+
+
+@router.get("/airport-codes", response_model=List[str])
+async def get_all_airport_codes(
+    db: Session = Depends(get_db),
+    current_user: UserInfo = Depends(require_admin),
+):
+    """
+    Get all airport codes from the database.
+    Only administrators can access this endpoint.
+    Returns a list of airport codes only.
+    """
+    airports = db.query(Airport).all()
+    return [airport.airport_code for airport in airports]
 
