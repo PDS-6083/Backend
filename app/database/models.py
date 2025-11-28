@@ -70,11 +70,10 @@ class Flight(Base):
 
 class CrewSchedule(Base):
     __tablename__ = "crew_schedules"
-
     flight_number = Column(String(10), ForeignKey("flights.flight_number"), primary_key=True)
-    date = Column(Date, ForeignKey("flights.date"), primary_key=True)
-    scheduled_departure_time = Column(Time, ForeignKey("flights.scheduled_departure_time"), primary_key=True)
+    scheduled_departure_time = Column(Time, primary_key=True)
     email_id = Column(String(255), ForeignKey("crew.email_id"), primary_key=True)
+
 
 
 class Crew(Base):
