@@ -5,6 +5,9 @@ from app.database.connection import init_db
 from app.auth.routes import router as auth_router
 from app.admin.routes import router as admin_router
 from app.scheduler.routes import router as scheduler_router
+from app.crew.routes import router as crew_router
+from app.engineer.routes import router as engineer_router
+
 
 app = FastAPI(
     title="AeroSync API",
@@ -25,6 +28,9 @@ init_db()
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(scheduler_router)
+app.include_router(crew_router)
+app.include_router(engineer_router)
+
 @app.get("/health")
 async def health_check():
     """
