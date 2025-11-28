@@ -1,18 +1,25 @@
 from typing import List
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import UserInfo, UserType
 from app.database.connection import get_db
-from app.database.models import Aircraft, AircraftStatus, Route, Airport
+from app.database.models import Aircraft, AircraftStatus, Route, Airport, Flight, Admin, Crew, Scheduler, Engineer
 from app.admin.schemas import (
     AircraftCreateRequest, AircraftResponse, AircraftUpdateRequest, AircraftDeleteRequest,
     RouteCreateRequest, RouteResponse, RouteUpdateRequest, RouteDeleteRequest,
-    AirportResponse
+    AirportResponse, DashboardResponse, PopularRouteResponse, UserCreateRequest, UserCreateResponse
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+DEFAULT_PASSWORD = "password123"
 
 
 def require_admin(current_user: UserInfo = Depends(get_current_user)) -> UserInfo:
@@ -488,4 +495,129 @@ async def get_all_airport_codes(
     """
     airports = db.query(Airport).all()
     return [airport.airport_code for airport in airports]
+
+
+@router.get("/dashboard", response_model=DashboardResponse)
+async def get_dashboard(
+    db: Session = Depends(get_db),
+    current_user: UserInfo = Depends(require_admin),
+):
+    """
+    Get dashboard data for administrators.
+    Returns:
+    - 7 most popular routes (sorted by approved capacity)
+    - Count of flights in air (flights scheduled for today or future)
+    - Count of aircraft in maintenance
+    Only administrators can access this endpoint.
+    """
+
+    popular_routes = db.query(Route).order_by(desc(Route.approved_capacity)).limit(7).all()
+    
+    most_popular_routes = [
+        PopularRouteResponse(
+            route_id=route.route_id,
+            source_airport_code=route.source_airport_code,
+            destination_airport_code=route.destination_airport_code,
+            approved_capacity=route.approved_capacity,
+        )
+        for route in popular_routes
+    ]
+    
+
+    today = date.today()
+    flights_in_air = db.query(Flight).filter(Flight.status == FlightStatus.IN_AIR).count()
+    
+    aircraft_in_maintenance = db.query(Aircraft).filter(
+        Aircraft.status == AircraftStatus.MAINTENANCE
+    ).count()
+    
+    return DashboardResponse(
+        most_popular_routes=most_popular_routes,
+        flights_in_air=flights_in_air,
+        aircraft_in_maintenance=aircraft_in_maintenance,
+    )
+
+
+@router.post("/user", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    user_data: UserCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: UserInfo = Depends(require_admin),
+):
+    """
+    Create a new user with a default password.
+    Only administrators can perform this action.
+    For crew users, is_pilot field is required to differentiate between pilots and cabin crew.
+    """
+    user_type = user_data.user_type.lower()
+    
+    # Validate user type
+    valid_user_types = ["admin", "crew", "scheduler", "engineer"]
+    if user_type not in valid_user_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid user_type. Must be one of: {', '.join(valid_user_types)}",
+        )
+    
+    # For crew, is_pilot is required
+    if user_type == "crew" and user_data.is_pilot is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="is_pilot field is required for crew users",
+        )
+    
+    # For non-crew users, is_pilot should not be provided
+    if user_type != "crew" and user_data.is_pilot is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="is_pilot field is only valid for crew users",
+        )
+    
+    # Map user type to model
+    model_map = {
+        "admin": Admin,
+        "crew": Crew,
+        "scheduler": Scheduler,
+        "engineer": Engineer,
+    }
+    model = model_map[user_type]
+    
+    # Check if user already exists
+    existing_user = db.query(model).filter(model.email_id == user_data.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{user_type} with email '{user_data.email}' already exists",
+        )
+    
+    # Hash the default password
+    hashed_password = pwd_context.hash(DEFAULT_PASSWORD)
+    
+    # Create user based on type
+    if user_type == "crew":
+        new_user = model(
+            email_id=user_data.email,
+            name=user_data.name,
+            phone=user_data.phone,
+            password_hash=hashed_password,
+            is_pilot=user_data.is_pilot,
+        )
+    else:
+        new_user = model(
+            email_id=user_data.email,
+            name=user_data.name,
+            phone=user_data.phone,
+            password_hash=hashed_password,
+        )
+    
+    db.add(new_user)
+    db.commit()
+    
+    return UserCreateResponse(
+        success=True,
+        message=f"{user_type} user created successfully",
+        email=user_data.email,
+        user_type=user_type,
+        default_password=DEFAULT_PASSWORD,
+    )
 
