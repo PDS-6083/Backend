@@ -1,4 +1,5 @@
 # app/engineer/schemas.py
+from enum import Enum
 from datetime import date, datetime
 from typing import List, Optional
 
@@ -114,3 +115,28 @@ class AircraftDetail(BaseModel):
 
     maintenance_history: List[MaintenanceHistoryItem]
     parts: List[AircraftPartListItem]
+
+class MaintenanceTypeEnum(str, Enum):
+    ROUTINE = "routine"
+    INSPECTION = "inspection"
+    REPAIR = "repair"
+    OVERHAUL = "overhaul"
+
+class MaintenanceJobCreateRequest(BaseModel):
+    aircraft_registration: str
+    type: MaintenanceTypeEnum
+    remarks: Optional[str] = None
+
+class EngineerAssignmentItem(BaseModel):
+    email_id: str
+    role: str = "Engineer"
+
+
+class AddEngineersToJobRequest(BaseModel):
+    engineers: List[EngineerAssignmentItem]
+
+class AircraftPartCreateRequest(BaseModel):
+    part_number: str
+    part_manufacturer: str
+    model: str
+    manufacturing_date: date
