@@ -76,3 +76,15 @@ class AirportResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class CrewUpdateRoleRequest(BaseModel):
+    is_pilot: bool
+
+
+class CrewResponse(BaseModel):
+    email_id: str
+    name: str
+    phone: str | None
+    is_pilot: bool
+
+    class Config:
+        from_attributes = True

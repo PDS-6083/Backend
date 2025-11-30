@@ -5,11 +5,12 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import UserInfo, UserType
 from app.database.connection import get_db
-from app.database.models import Aircraft, AircraftStatus, Route, Airport
+from app.database.models import Aircraft, AircraftStatus, Route, Airport, Crew
 from app.admin.schemas import (
     AircraftCreateRequest, AircraftResponse, AircraftUpdateRequest, AircraftDeleteRequest,
     RouteCreateRequest, RouteResponse, RouteUpdateRequest, RouteDeleteRequest,
-    AirportResponse
+    AirportResponse, CrewUpdateRoleRequest,
+    CrewResponse,
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -489,3 +490,31 @@ async def get_all_airport_codes(
     airports = db.query(Airport).all()
     return [airport.airport_code for airport in airports]
 
+@router.patch("/crew/{email_id}/role", response_model=CrewResponse)
+async def update_crew_role(
+    email_id: str,
+    payload: CrewUpdateRoleRequest,
+    db: Session = Depends(get_db),
+    current_user: UserInfo = Depends(require_admin),
+):
+    """
+    Admin sets whether a crew member is a pilot (is_pilot=true) or cabin crew (is_pilot=false).
+    """
+
+    crew = db.query(Crew).filter(Crew.email_id == email_id).first()
+    if not crew:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Crew member not found.",
+        )
+
+    crew.is_pilot = payload.is_pilot
+    db.commit()
+    db.refresh(crew)
+
+    return CrewResponse(
+        email_id=crew.email_id,
+        name=crew.name,
+        phone=crew.phone,
+        is_pilot=crew.is_pilot,
+    )
