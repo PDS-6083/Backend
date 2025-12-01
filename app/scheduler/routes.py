@@ -293,22 +293,30 @@ def update_flight(
 @router.delete("/flights/{flight_number}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_flight(
     flight_number: str,
+    flight_date: date = Query(..., description="Date of the flight"),
     db: Session = Depends(get_db),
     current_user: UserInfo = Depends(require_scheduler),
 ):
-    """Delete a flight (and its crew assignments)."""
-    flight = db.query(Flight).filter(Flight.flight_number == flight_number).first()
+    """Delete a flight (and let DB cascade delete its crew assignments)."""
+
+    flight = (
+        db.query(Flight)
+        .filter(
+            Flight.flight_number == flight_number,
+            Flight.date == flight_date,
+        )
+        .first()
+    )
     if not flight:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Flight {flight_number} not found.",
+            detail=f"Flight {flight_number} on {flight_date} not found.",
         )
 
-    db.query(CrewSchedule).filter(
-        CrewSchedule.flight_number == flight.flight_number
-    ).delete()
+    # No need to manually delete CrewSchedule — ON DELETE CASCADE will handle it
     db.delete(flight)
     db.commit()
+
     return None
 
 

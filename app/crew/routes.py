@@ -199,7 +199,13 @@ def get_my_flights(
 
     query = (
         db.query(Flight, Route)
-        .join(CrewSchedule, CrewSchedule.flight_number == Flight.flight_number)
+        .join(
+            CrewSchedule,
+            and_(
+                CrewSchedule.flight_number == Flight.flight_number,
+                CrewSchedule.date == Flight.date,
+            ),
+        )
         .join(Route, Flight.route_id == Route.route_id)
         .filter(CrewSchedule.email_id == email)
     )
@@ -243,11 +249,14 @@ def get_my_flights(
 # ---------------------------------------------------------------------------
 # Flight details for a crew member
 # ---------------------------------------------------------------------------
+from datetime import date
 
+from fastapi import Query
 
 @router.get("/my-flights/{flight_number}", response_model=CrewFlightDetail)
 def get_my_flight_detail(
     flight_number: str,
+    flight_date: date = Query(..., description="Date of the flight"),
     db: Session = Depends(get_db),
     current_user: UserInfo = Depends(require_crew),
 ):
@@ -261,9 +270,18 @@ def get_my_flight_detail(
         db.query(Flight, Route, Aircraft)
         .join(Route, Flight.route_id == Route.route_id)
         .join(Aircraft, Flight.aircraft_registration == Aircraft.registration_number)
-        .join(CrewSchedule, CrewSchedule.flight_number == Flight.flight_number)
+        .join(
+            CrewSchedule,
+            and_(
+                CrewSchedule.flight_number == Flight.flight_number,
+                CrewSchedule.date == Flight.date,
+            ),
+        )
         .filter(CrewSchedule.email_id == email)
-        .filter(Flight.flight_number == flight_number)
+        .filter(
+            Flight.flight_number == flight_number,
+            Flight.date == flight_date,
+        )
         .first()
     )
 
@@ -284,7 +302,10 @@ def get_my_flight_detail(
     # Get all crew on this flight
     schedules = (
         db.query(CrewSchedule)
-        .filter(CrewSchedule.flight_number == flight.flight_number)
+        .filter(
+            CrewSchedule.flight_number == flight.flight_number,
+            CrewSchedule.date == flight.date,
+        )
         .all()
     )
     crew_emails = [s.email_id for s in schedules]
