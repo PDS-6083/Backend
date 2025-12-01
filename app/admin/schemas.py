@@ -77,6 +77,20 @@ class AirportResponse(BaseModel):
         from_attributes = True
 
 
+class CrewUpdateRoleRequest(BaseModel):
+    is_pilot: bool
+
+
+class CrewResponse(BaseModel):
+    email_id: str
+    name: str
+    phone: str | None
+    is_pilot: bool
+
+    class Config:
+        from_attributes = True
+
+
 class PopularRouteResponse(BaseModel):
     route_id: int
     source_airport_code: str
@@ -104,4 +118,5 @@ class UserCreateResponse(BaseModel):
     email: str
     user_type: str
     default_password: str
+
 

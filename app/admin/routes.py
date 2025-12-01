@@ -8,11 +8,12 @@ from sqlalchemy import desc
 from app.auth.dependencies import get_current_user
 from app.auth.schemas import UserInfo, UserType
 from app.database.connection import get_db
+
 from app.database.models import Aircraft, AircraftStatus, Route, Airport, Flight, Admin, Crew, Scheduler, Engineer
 from app.admin.schemas import (
     AircraftCreateRequest, AircraftResponse, AircraftUpdateRequest, AircraftDeleteRequest,
     RouteCreateRequest, RouteResponse, RouteUpdateRequest, RouteDeleteRequest,
-    AirportResponse, DashboardResponse, PopularRouteResponse, UserCreateRequest, UserCreateResponse
+    AirportResponse, DashboardResponse, CrewUpdateRoleRequest, CrewResponse, PopularRouteResponse, UserCreateRequest, UserCreateResponse
 )
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -497,11 +498,37 @@ async def get_all_airport_codes(
     return [airport.airport_code for airport in airports]
 
 
-@router.get("/dashboard", response_model=DashboardResponse)
-async def get_dashboard(
+@router.patch("/crew/{email_id}/role", response_model=CrewResponse)
+async def update_crew_role(
+    email_id: str,
+    payload: CrewUpdateRoleRequest,
     db: Session = Depends(get_db),
     current_user: UserInfo = Depends(require_admin),
 ):
+    """
+    Admin sets whether a crew member is a pilot (is_pilot=true) or cabin crew (is_pilot=false).
+    """
+
+    crew = db.query(Crew).filter(Crew.email_id == email_id).first()
+    if not crew:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Crew member not found.",
+        )
+
+    crew.is_pilot = payload.is_pilot
+    db.commit()
+    db.refresh(crew)
+
+    return CrewResponse(
+        email_id=crew.email_id,
+        name=crew.name,
+        phone=crew.phone,
+        is_pilot=crew.is_pilot,
+    )
+
+@router.get("/dashboard", response_model=DashboardResponse)
+async def get_dashboard(db: Session = Depends(get_db),current_user: UserInfo = Depends(require_admin),):
     """
     Get dashboard data for administrators.
     Returns:
@@ -620,4 +647,5 @@ async def create_user(
         user_type=user_type,
         default_password=DEFAULT_PASSWORD,
     )
+
 
