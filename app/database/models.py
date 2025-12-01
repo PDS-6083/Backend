@@ -72,8 +72,14 @@ class Flight(Base):
         String(20), ForeignKey("aircraft.registration_number"), nullable=False
     )
 
+    # optional, but nice: relationship back to crew schedules
+    crew_schedules = relationship(
+        "CrewSchedule",
+        back_populates="flight",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
-from sqlalchemy import ForeignKeyConstraint
 
 class CrewSchedule(Base):
     __tablename__ = "crew_schedules"
@@ -82,16 +88,24 @@ class CrewSchedule(Base):
     date = Column(Date, primary_key=True)
 
     scheduled_departure_time = Column(Time, primary_key=True)
-    email_id = Column(String(255), ForeignKey("crew.email_id"), primary_key=True)
+    email_id = Column(
+        String(255),
+        ForeignKey("crew.email_id"),
+        primary_key=True,
+    )
 
     __table_args__ = (
         ForeignKeyConstraint(
             ["flight_number", "date"],
             ["flights.flight_number", "flights.date"],
+            onupdate="CASCADE",      # <<< THIS is the key bit
+            ondelete="RESTRICT",     # or "CASCADE" if you want deletes to cascade too
+            name="crew_schedules_ibfk_1",  # optional, but matches your error message
         ),
     )
 
-
+    # relationship back to Flight
+    flight = relationship("Flight", back_populates="crew_schedules")
 
 
 

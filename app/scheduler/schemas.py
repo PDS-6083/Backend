@@ -19,13 +19,11 @@ class FlightCreateRequest(FlightBase):
 
 
 class FlightUpdateRequest(BaseModel):
-    """Partial update for an existing flight."""
     route_id: Optional[int] = None
-    date: Optional[date] = None
+    date:date
     scheduled_departure_time: Optional[time] = None
     scheduled_arrival_time: Optional[time] = None
     aircraft_registration: Optional[str] = None
-
 
 class FlightResponse(FlightBase):
     class Config:
