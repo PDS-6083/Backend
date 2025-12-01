@@ -5,7 +5,7 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import create_access_token
-from app.auth.schemas import LoginRequest, LoginResponse, UserInfo, UserType
+from app.auth.schemas import LoginRequest, LoginResponse, LogoutResponse, UserInfo, UserType
 from app.auth.dependencies import get_current_user_with_name
 from app.config import settings
 from app.database.connection import get_db
@@ -94,6 +94,30 @@ def login(
         message="Login successful",
         user=user_info,
         token=access_token,
+    )
+
+
+@router.post("/logout", response_model=LogoutResponse)
+def logout(
+    response: Response,
+    current_user: UserInfo = Depends(get_current_user_with_name),
+):
+    """
+    Logout endpoint that clears the authentication cookie.
+    Requires valid authentication to logout.
+    """
+    # Clear the auth_token cookie by setting it with an empty value and past expiration
+    response.delete_cookie(
+        key="auth_token",
+        path="/",
+        samesite=settings.cookie_samesite,
+        secure=settings.cookie_secure,
+        httponly=settings.cookie_httponly,
+    )
+    
+    return LogoutResponse(
+        success=True,
+        message="Logout successful",
     )
 
 

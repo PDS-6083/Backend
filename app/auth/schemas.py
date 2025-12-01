@@ -27,5 +27,11 @@ class LoginResponse(BaseModel):
     success: bool
     message: str
     user: UserInfo | None = None
+    token: str | None = None
+
+
+class LogoutResponse(BaseModel):
+    success: bool
+    message: str
 
 
