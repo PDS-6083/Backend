@@ -53,7 +53,7 @@ def _compute_duration_minutes(flight_date, dep_time, arr_time) -> int:
     start = datetime.combine(flight_date, dep_time)
     end = datetime.combine(flight_date, arr_time)
     if end <= start:
-        end += timedelta(days=1)
+        raise ValueError("Arrival time must be after departure time.")
     return int((end - start).total_seconds() // 60)
     
 

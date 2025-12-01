@@ -72,7 +72,6 @@ class Flight(Base):
         String(20), ForeignKey("aircraft.registration_number"), nullable=False
     )
 
-    # optional, but nice: relationship back to crew schedules
     crew_schedules = relationship(
         "CrewSchedule",
         back_populates="flight",
@@ -100,11 +99,10 @@ class CrewSchedule(Base):
             ["flights.flight_number", "flights.date"],
             onupdate="CASCADE",      
             ondelete="CASCADE",     
-            name="crew_schedules_ibfk_1",  # optional, but matches your error message
+            name="crew_schedules_ibfk_1", 
         ),
     )
 
-    # relationship back to Flight
     flight = relationship("Flight", back_populates="crew_schedules")
 
 

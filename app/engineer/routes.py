@@ -187,8 +187,7 @@ def job_detail(
                 )
             )
 
-    # Parts – with current schema, we only know aircraft parts, not job-specific parts.
-    # So for now we show all parts for this aircraft.
+
     part_rows = (
         db.query(AircraftPart)
         .filter(AircraftPart.aircraft_registration == mh.registration_number)
@@ -318,8 +317,17 @@ def create_job(
     - remarks: from payload
     - the current engineer is automatically added as LEADER
     """
-
-    # 1) Validate aircraft
+    engineer = (
+        db.query(Engineer)
+        .filter(Engineer.email_id == current_user.email)
+        .first()
+    )
+    if not engineer:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Engineer record not found for current user.",
+        )
+    # Validate aircraft
     aircraft = (
         db.query(Aircraft)
         .filter(Aircraft.registration_number == payload.aircraft_registration)
@@ -329,6 +337,29 @@ def create_job(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Aircraft {payload.aircraft_registration} does not exist.",
+        )
+    if aircraft.status == AircraftStatus.RETIRED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot create maintenance job for retired aircraft {payload.aircraft_registration}.",
+        )
+    existing_open_job = (
+        db.query(MaintenanceHistory)
+        .filter(
+            MaintenanceHistory.registration_number == payload.aircraft_registration,
+            MaintenanceHistory.status.in_(
+                [MaintenanceStatus.PENDING, MaintenanceStatus.IN_PROGRESS]
+            ),
+        )
+        .first()
+    )
+    if existing_open_job:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Aircraft {payload.aircraft_registration} already has an open "
+                f"maintenance job (id={existing_open_job.job_id})."
+            ),
         )
 
     # 2) Map Pydantic enum to DB enum
@@ -348,6 +379,8 @@ def create_job(
         registration_number=payload.aircraft_registration,
         type=mh_type,
     )
+    if aircraft.status != AircraftStatus.MAINTENANCE:
+        aircraft.status = AircraftStatus.MAINTENANCE
     db.add(mh)
     db.commit()
     db.refresh(mh)
@@ -375,12 +408,17 @@ def add_engineers_to_job(
     Leader of the job can assign other engineers to the same job.
     """
 
-    # 1) Ensure job exists
+    # Ensure job exists
     mh = db.query(MaintenanceHistory).filter(MaintenanceHistory.job_id == job_id).first()
     if not mh:
         raise HTTPException(status_code=404, detail="Maintenance job not found.")
+    if mh.status in (MaintenanceStatus.COMPLETED, MaintenanceStatus.CANCELLED):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot modify engineers for a {mh.status.value} job.",
+        )
 
-    # 2) Ensure current engineer is LEADER for this job
+    # Ensure current engineer is LEADER for this job
     leader_link = (
         db.query(EngineerMaintenance)
         .filter(
@@ -401,7 +439,7 @@ def add_engineers_to_job(
             detail="No engineers provided.",
         )
 
-    # 3) Upsert each engineer assignment
+    # Upsert each engineer assignment
     for item in payload.engineers:
         # validate engineer exists
         eng = db.query(Engineer).filter(Engineer.email_id == item.email_id).first()
@@ -431,6 +469,26 @@ def add_engineers_to_job(
                     role=item.role,
                 )
             )
+    db.flush()
+    job_links = (
+        db.query(EngineerMaintenance)
+        .filter(EngineerMaintenance.job_id == job_id)
+        .all()
+    )
+    leader_count = sum(1 for l in job_links if l.role == LEADER_ROLE)
+
+    if leader_count == 0:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Each maintenance job must have at least one leader.",
+        )
+    if leader_count > 1:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Each maintenance job can have only one leader.",
+        )
 
     db.commit()
 
@@ -452,7 +510,7 @@ def add_part_to_aircraft(
     Engineer adds a new part to an aircraft.
     """
 
-    # 1) Aircraft must exist
+    # Aircraft must exist
     aircraft = (
         db.query(Aircraft)
         .filter(Aircraft.registration_number == registration_number)
@@ -460,8 +518,18 @@ def add_part_to_aircraft(
     )
     if not aircraft:
         raise HTTPException(status_code=404, detail="Aircraft not found.")
+    if aircraft.status == AircraftStatus.RETIRED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot add parts to retired aircraft {registration_number}.",
+        )
+    if payload.manufacturing_date > date.today():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Part manufacturing date cannot be in the future.",
+        )
 
-    # 2) part_number must be unique
+    # part_number must be unique
     existing = (
         db.query(AircraftPart)
         .filter(AircraftPart.part_number == payload.part_number)
