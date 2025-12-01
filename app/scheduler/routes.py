@@ -215,71 +215,77 @@ def get_flight(
         )
     return flight
 
+from fastapi import Query
+from sqlalchemy.exc import IntegrityError
 
 @router.put("/flights/{flight_number}", response_model=FlightResponse)
 def update_flight(
     flight_number: str,
-    flight_update: FlightUpdateRequest,
+    flight_date: date = Query(..., description="Date of the flight"),
+    flight_update: FlightUpdateRequest = ...,
     db: Session = Depends(get_db),
     current_user: UserInfo = Depends(require_scheduler),
 ):
-    """Update an existing flight (partial update)."""
-    flight = db.query(Flight).filter(Flight.flight_number == flight_number).first()
+    # 1. Find the existing flight
+    flight = (
+        db.query(Flight)
+        .filter(
+            Flight.flight_number == flight_number,
+            Flight.date == flight_date,
+        )
+        .first()
+    )
     if not flight:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Flight {flight_number} not found.",
+            detail=f"Flight {flight_number} on {flight_date} not found.",
         )
 
-    # If route_id is changed, validate it
-    if flight_update.route_id is not None:
-        route = db.query(Route).filter(Route.route_id == flight_update.route_id).first()
-        if not route:
+    # 2. If body has a different date, check for conflicts and then update
+    if flight_update.date is not None and flight_update.date != flight.date:
+        conflict = (
+            db.query(Flight)
+            .filter(
+                Flight.flight_number == flight.flight_number,
+                Flight.date == flight_update.date,
+            )
+            .first()
+        )
+        if conflict:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Route with id {flight_update.route_id} does not exist.",
+                detail=(
+                    f"Cannot change date: flight {flight.flight_number} on "
+                    f"{flight_update.date} already exists."
+                ),
             )
+
+        # This triggers ON UPDATE CASCADE in MySQL for crew_schedules
+        flight.date = flight_update.date
+
+    # 3. Update other fields if present
+    if flight_update.route_id is not None:
         flight.route_id = flight_update.route_id
 
-    # If aircraft is changed, validate it
-    if flight_update.aircraft_registration is not None:
-        aircraft = db.query(Aircraft).filter(
-            Aircraft.registration_number == flight_update.aircraft_registration
-        ).first()
-        if not aircraft:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Aircraft {flight_update.aircraft_registration} does not exist.",
-            )
-        flight.aircraft_registration = flight_update.aircraft_registration
-
-        if flight_update.date is not None and flight_update.date != flight.date:
-            # Avoid duplicate PK (flight_number, date) when moving the date
-            conflict = (
-                db.query(Flight)
-                .filter(
-                    Flight.flight_number == flight.flight_number,
-                    Flight.date == flight_update.date,
-                )
-                .first()
-            )
-            if conflict:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        f"Cannot change date: flight {flight.flight_number} on "
-                        f"{flight_update.date} already exists."
-                    ),
-                )
-
-            # Safe to update PK; CrewSchedule will follow via ON UPDATE CASCADE
-            flight.date = flight_update.date
     if flight_update.scheduled_departure_time is not None:
         flight.scheduled_departure_time = flight_update.scheduled_departure_time
+
     if flight_update.scheduled_arrival_time is not None:
         flight.scheduled_arrival_time = flight_update.scheduled_arrival_time
 
-    db.commit()
+    if flight_update.aircraft_registration is not None:
+        flight.aircraft_registration = flight_update.aircraft_registration
+
+    # 4. Commit safely
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail=f"Database constraint error while updating flight: {str(e.orig)}",
+        )
+
     db.refresh(flight)
     return flight
 
