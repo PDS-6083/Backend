@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.jwt_handler import create_access_token
 from app.auth.schemas import LoginRequest, LoginResponse, UserInfo, UserType
+from app.auth.dependencies import get_current_user_with_name
 from app.config import settings
 from app.database.connection import get_db
 from app.database import models
@@ -13,6 +14,14 @@ from app.database import models
 router = APIRouter(prefix="/api", tags=["auth"])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+@router.get("/me", response_model=UserInfo)
+def get_current_user_info(current_user: UserInfo = Depends(get_current_user_with_name)):
+    """
+    Return the currently authenticated user's info.
+    Uses the auth token stored in cookies.
+    """
+    return current_user
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

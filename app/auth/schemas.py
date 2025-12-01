@@ -20,6 +20,7 @@ class UserInfo(BaseModel):
     id: str
     email: EmailStr
     user_type: UserType
+    name: str | None = None
 
 
 class LoginResponse(BaseModel):
