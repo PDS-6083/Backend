@@ -3,6 +3,8 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 import enum
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Date, Time, Text, Enum, ForeignKeyConstraint
+
 
 Base = declarative_base()
 
@@ -61,18 +63,35 @@ class Flight(Base):
     __tablename__ = "flights"
 
     flight_number = Column(String(10), primary_key=True)
+    date = Column(Date, primary_key=True)
+
     route_id = Column(Integer, ForeignKey("routes.route_id"), nullable=False)
-    date = Column(Date, nullable=False)
     scheduled_departure_time = Column(Time, nullable=False)
     scheduled_arrival_time = Column(Time, nullable=False)
-    aircraft_registration = Column(String(20), ForeignKey("aircraft.registration_number"), nullable=False)
+    aircraft_registration = Column(
+        String(20), ForeignKey("aircraft.registration_number"), nullable=False
+    )
 
+
+from sqlalchemy import ForeignKeyConstraint
 
 class CrewSchedule(Base):
     __tablename__ = "crew_schedules"
-    flight_number = Column(String(10), ForeignKey("flights.flight_number"), primary_key=True)
+
+    flight_number = Column(String(10), primary_key=True)
+    date = Column(Date, primary_key=True)
+
     scheduled_departure_time = Column(Time, primary_key=True)
     email_id = Column(String(255), ForeignKey("crew.email_id"), primary_key=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["flight_number", "date"],
+            ["flights.flight_number", "flights.date"],
+        ),
+    )
+
+
 
 
 

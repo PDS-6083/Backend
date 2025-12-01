@@ -124,15 +124,24 @@ def create_flight(
 ):
     """Create a new flight."""
 
-    # Ensure flight_number is unique
-    existing = db.query(Flight).filter(
-        Flight.flight_number == flight_data.flight_number
-    ).first()
+        # Ensure (flight_number, date) pair is unique
+    existing = (
+        db.query(Flight)
+        .filter(
+            Flight.flight_number == flight_data.flight_number,
+            Flight.date == flight_data.date,
+        )
+        .first()
+    )
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Flight with number {flight_data.flight_number} already exists.",
+            detail=(
+                f"Flight {flight_data.flight_number} on {flight_data.date} "
+                "already exists."
+            ),
         )
+
 
     # Validate route
     route = db.query(Route).filter(Route.route_id == flight_data.route_id).first()
@@ -186,11 +195,19 @@ def list_flights(
 @router.get("/flights/{flight_number}", response_model=FlightResponse)
 def get_flight(
     flight_number: str,
+    flight_date: date,
     db: Session = Depends(get_db),
     current_user: UserInfo = Depends(require_scheduler),
 ):
     """Get a single flight by flight number."""
-    flight = db.query(Flight).filter(Flight.flight_number == flight_number).first()
+    flight = (
+        db.query(Flight)
+        .filter(
+            Flight.flight_number == flight_number,
+            Flight.date == flight_date,
+        )
+        .first()
+    )
     if not flight:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -236,8 +253,27 @@ def update_flight(
             )
         flight.aircraft_registration = flight_update.aircraft_registration
 
-    if flight_update.date is not None:
-        flight.date = flight_update.date
+        if flight_update.date is not None and flight_update.date != flight.date:
+            # Avoid duplicate PK (flight_number, date) when moving the date
+            conflict = (
+                db.query(Flight)
+                .filter(
+                    Flight.flight_number == flight.flight_number,
+                    Flight.date == flight_update.date,
+                )
+                .first()
+            )
+            if conflict:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Cannot change date: flight {flight.flight_number} on "
+                        f"{flight_update.date} already exists."
+                    ),
+                )
+
+            # Safe to update PK; CrewSchedule will follow via ON UPDATE CASCADE
+            flight.date = flight_update.date
     if flight_update.scheduled_departure_time is not None:
         flight.scheduled_departure_time = flight_update.scheduled_departure_time
     if flight_update.scheduled_arrival_time is not None:
@@ -275,12 +311,10 @@ def delete_flight(
 # ---------------------------------------------------------------------------
 
 
-@router.post(
-    "/flights/{flight_number}/assign-crew",
-    response_model=CrewAssignmentResponse,
-)
+@router.post("/flights/{flight_number}/crew", response_model=CrewAssignmentResponse)
 def assign_crew_to_flight(
     flight_number: str,
+    flight_date: date,  # NEW
     payload: CrewAssignmentRequest,
     db: Session = Depends(get_db),
     current_user: UserInfo = Depends(require_scheduler),
@@ -290,7 +324,14 @@ def assign_crew_to_flight(
     Current behaviour: replaces any existing crew assignments for this flight.
     """
 
-    flight = db.query(Flight).filter(Flight.flight_number == flight_number).first()
+    flight = (
+        db.query(Flight)
+        .filter(
+            Flight.flight_number == flight_number,
+            Flight.date == flight_date,
+        )
+        .first()
+    )
     if not flight:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -315,17 +356,20 @@ def assign_crew_to_flight(
 
     # Clear previous assignments for this flight
     db.query(CrewSchedule).filter(
-        CrewSchedule.flight_number == flight.flight_number
+        CrewSchedule.flight_number == flight.flight_number,
+        CrewSchedule.date == flight.date,
     ).delete()
 
     # Insert new assignments
     for c in crew_members:
         schedule = CrewSchedule(
             flight_number=flight.flight_number,
+            date=flight.date,  # NEW
             scheduled_departure_time=flight.scheduled_departure_time,
             email_id=c.email_id,
         )
         db.add(schedule)
+
 
     db.commit()
 
@@ -345,25 +389,30 @@ def assign_crew_to_flight(
     )
 
 
-@router.get(
-    "/flights/{flight_number}/crew",
-    response_model=List[CrewSummary],
-)
+@router.get("/flights/{flight_number}/crew", response_model=List[CrewSummary])
 def get_flight_crew(
     flight_number: str,
+    flight_date: date,  # NEW
     db: Session = Depends(get_db),
     current_user: UserInfo = Depends(require_scheduler),
 ):
-    """Get all crew members currently assigned to a flight."""
-    flight = db.query(Flight).filter(Flight.flight_number == flight_number).first()
+    flight = (
+        db.query(Flight)
+        .filter(
+            Flight.flight_number == flight_number,
+            Flight.date == flight_date,
+        )
+        .first()
+    )
     if not flight:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Flight {flight_number} not found.",
+            detail=f"Flight {flight_number} on {flight_date} not found.",
         )
 
     schedules = db.query(CrewSchedule).filter(
-        CrewSchedule.flight_number == flight.flight_number
+        CrewSchedule.flight_number == flight.flight_number,
+        CrewSchedule.date == flight.date,  # NEW
     ).all()
 
     if not schedules:

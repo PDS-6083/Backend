@@ -79,9 +79,16 @@ def crew_dashboard(
     time_now = now.time()
 
     # Base query: all flights for this crew (join CrewSchedule -> Flight -> Route)
+
     base_query = (
         db.query(Flight, Route)
-        .join(CrewSchedule, CrewSchedule.flight_number == Flight.flight_number)
+        .join(
+            CrewSchedule,
+            and_(
+                CrewSchedule.flight_number == Flight.flight_number,
+                CrewSchedule.date == Flight.date,
+            ),
+        )
         .join(Route, Flight.route_id == Route.route_id)
         .filter(CrewSchedule.email_id == email)
     )
@@ -338,7 +345,13 @@ def get_my_aircrafts(
     rows = (
         db.query(Aircraft)
         .join(Flight, Flight.aircraft_registration == Aircraft.registration_number)
-        .join(CrewSchedule, CrewSchedule.flight_number == Flight.flight_number)
+        .join(
+            CrewSchedule,
+            and_(
+                CrewSchedule.flight_number == Flight.flight_number,
+                CrewSchedule.date == Flight.date,
+            ),
+        )
         .filter(CrewSchedule.email_id == email)
         .distinct()
         .all()
