@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -159,6 +159,35 @@ def create_flight(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Aircraft {flight_data.aircraft_registration} does not exist.",
+        )
+    
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    departure_dt = datetime.combine(
+        flight_data.date,
+        flight_data.scheduled_departure_time,
+    )
+    arrival_dt = datetime.combine(
+        flight_data.date,
+        flight_data.scheduled_arrival_time,
+    )
+
+    if departure_dt.tzinfo is not None:
+        departure_dt = departure_dt.replace(tzinfo=None)
+    if arrival_dt.tzinfo is not None:
+        arrival_dt = arrival_dt.replace(tzinfo=None)
+
+    if departure_dt < now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot create a flight whose departure time is in the past.",
+        )
+
+    if arrival_dt <= departure_dt:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Arrival time must be after departure time.",
         )
 
     flight = Flight(
