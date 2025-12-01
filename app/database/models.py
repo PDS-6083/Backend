@@ -98,8 +98,8 @@ class CrewSchedule(Base):
         ForeignKeyConstraint(
             ["flight_number", "date"],
             ["flights.flight_number", "flights.date"],
-            onupdate="CASCADE",      # <<< THIS is the key bit
-            ondelete="RESTRICT",     # or "CASCADE" if you want deletes to cascade too
+            onupdate="CASCADE",      
+            ondelete="CASCADE",     
             name="crew_schedules_ibfk_1",  # optional, but matches your error message
         ),
     )
