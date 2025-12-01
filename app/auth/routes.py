@@ -93,6 +93,7 @@ def login(
         success=True,
         message="Login successful",
         user=user_info,
+        token=access_token,
     )
 
 
