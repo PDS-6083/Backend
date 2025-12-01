@@ -1,8 +1,8 @@
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, time
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func
+from sqlalchemy import func,  or_
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
@@ -40,6 +40,112 @@ def require_scheduler(current_user: UserInfo = Depends(get_current_user)) -> Use
             detail="Only scheduler users can access this endpoint.",
         )
     return current_user
+
+def validate_flight_business_rules(
+    db: Session,
+    *,
+    flight_number: str,
+    flight_date: date,
+    route_id: int,
+    scheduled_departure_time: time,
+    scheduled_arrival_time: time,
+    aircraft_registration: str,
+    ignore_existing_flight_pk: Optional[tuple[str, date]] = None,
+) -> None:
+    """
+    Central place for flight validation rules used by both create and update.
+
+    Raises HTTPException on any validation failure.
+    """
+
+    # Validate route exists ---
+    route = db.query(Route).filter(Route.route_id == route_id).first()
+    if not route:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Route with id {route_id} does not exist.",
+        )
+
+    # Validate aircraft exists and is ACTIVE ---
+    aircraft = (
+        db.query(Aircraft)
+        .filter(Aircraft.registration_number == aircraft_registration)
+        .first()
+    )
+    if not aircraft:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Aircraft {aircraft_registration} does not exist.",
+        )
+
+    if aircraft.status != AircraftStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Aircraft {aircraft_registration} is not active.",
+        )
+
+    # Capacity rule: aircraft capacity vs route approved capacity ---
+    if aircraft.capacity > route.approved_capacity:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Aircraft capacity ({aircraft.capacity}) exceeds approved "
+                f"capacity for route {route.route_id} ({route.approved_capacity})."
+            ),
+        )
+
+    # Time rules: no flights in the past, arrival after departure ---
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+
+    departure_dt = datetime.combine(flight_date, scheduled_departure_time)
+    arrival_dt = datetime.combine(flight_date, scheduled_arrival_time)
+    if departure_dt.tzinfo is not None:
+        departure_dt = departure_dt.replace(tzinfo=None)
+    if arrival_dt.tzinfo is not None:
+        arrival_dt = arrival_dt.replace(tzinfo=None)
+
+    if departure_dt < now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot schedule a flight whose departure time is in the past.",
+        )
+
+    if arrival_dt <= departure_dt:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Arrival time must be after departure time.",
+        )
+
+    # Aircraft double-booking (overlapping flights) ---
+    overlap_query = (
+        db.query(Flight)
+        .filter(
+            Flight.aircraft_registration == aircraft_registration,
+            Flight.date == flight_date,
+            Flight.scheduled_departure_time < scheduled_arrival_time,
+            Flight.scheduled_arrival_time > scheduled_departure_time,
+        )
+    )
+
+    # When updating an existing flight, ignore that same (flight_number, date)
+    if ignore_existing_flight_pk is not None:
+        ignore_number, ignore_date = ignore_existing_flight_pk
+        overlap_query = overlap_query.filter(
+            or_(
+                Flight.flight_number != ignore_number,
+                Flight.date != ignore_date,
+            )
+        )
+
+    overlap = overlap_query.first()
+    if overlap:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Aircraft {aircraft_registration} is already scheduled for "
+                f"flight {overlap.flight_number} on {overlap.date} in this time window."
+            ),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +230,6 @@ def create_flight(
 ):
     """Create a new flight."""
 
-        # Ensure (flight_number, date) pair is unique
     existing = (
         db.query(Flight)
         .filter(
@@ -141,54 +246,15 @@ def create_flight(
                 "already exists."
             ),
         )
-
-
-    # Validate route
-    route = db.query(Route).filter(Route.route_id == flight_data.route_id).first()
-    if not route:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Route with id {flight_data.route_id} does not exist.",
-        )
-
-    # Validate aircraft
-    aircraft = db.query(Aircraft).filter(
-        Aircraft.registration_number == flight_data.aircraft_registration
-    ).first()
-    if not aircraft:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Aircraft {flight_data.aircraft_registration} does not exist.",
-        )
-    
-
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
-
-    departure_dt = datetime.combine(
-        flight_data.date,
-        flight_data.scheduled_departure_time,
+    validate_flight_business_rules(
+        db=db,
+        flight_number=flight_data.flight_number,
+        flight_date=flight_data.date,
+        route_id=flight_data.route_id,
+        scheduled_departure_time=flight_data.scheduled_departure_time,
+        scheduled_arrival_time=flight_data.scheduled_arrival_time,
+        aircraft_registration=flight_data.aircraft_registration,
     )
-    arrival_dt = datetime.combine(
-        flight_data.date,
-        flight_data.scheduled_arrival_time,
-    )
-
-    if departure_dt.tzinfo is not None:
-        departure_dt = departure_dt.replace(tzinfo=None)
-    if arrival_dt.tzinfo is not None:
-        arrival_dt = arrival_dt.replace(tzinfo=None)
-
-    if departure_dt < now:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot create a flight whose departure time is in the past.",
-        )
-
-    if arrival_dt <= departure_dt:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Arrival time must be after departure time.",
-        )
 
     flight = Flight(
         flight_number=flight_data.flight_number,
@@ -255,7 +321,6 @@ def update_flight(
     db: Session = Depends(get_db),
     current_user: UserInfo = Depends(require_scheduler),
 ):
-    # 1. Find the existing flight
     flight = (
         db.query(Flight)
         .filter(
@@ -270,13 +335,34 @@ def update_flight(
             detail=f"Flight {flight_number} on {flight_date} not found.",
         )
 
-    # 2. If body has a different date, check for conflicts and then update
-    if flight_update.date is not None and flight_update.date != flight.date:
+    # Compute new (effective) values after update
+    new_date = flight_update.date if flight_update.date is not None else flight.date
+    new_route_id = (
+        flight_update.route_id if flight_update.route_id is not None else flight.route_id
+    )
+    new_dep_time = (
+        flight_update.scheduled_departure_time
+        if flight_update.scheduled_departure_time is not None
+        else flight.scheduled_departure_time
+    )
+    new_arr_time = (
+        flight_update.scheduled_arrival_time
+        if flight_update.scheduled_arrival_time is not None
+        else flight.scheduled_arrival_time
+    )
+    new_aircraft_reg = (
+        flight_update.aircraft_registration
+        if flight_update.aircraft_registration is not None
+        else flight.aircraft_registration
+    )
+
+    # If body has a different date, check (flight_number, date) uniqueness
+    if new_date != flight.date:
         conflict = (
             db.query(Flight)
             .filter(
                 Flight.flight_number == flight.flight_number,
-                Flight.date == flight_update.date,
+                Flight.date == new_date,
             )
             .first()
         )
@@ -285,19 +371,43 @@ def update_flight(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     f"Cannot change date: flight {flight.flight_number} on "
-                    f"{flight_update.date} already exists."
+                    f"{new_date} already exists."
                 ),
             )
 
-        # This triggers ON UPDATE CASCADE in MySQL for crew_schedules
+    # Run shared business-rule validation with the *new* values
+    validate_flight_business_rules(
+        db=db,
+        flight_number=flight.flight_number,
+        flight_date=new_date,
+        route_id=new_route_id,
+        scheduled_departure_time=new_dep_time,
+        scheduled_arrival_time=new_arr_time,
+        aircraft_registration=new_aircraft_reg,
+        ignore_existing_flight_pk=(flight.flight_number, flight.date),
+    )
+
+    # If validation passes, apply changes to the entity
+    if flight_update.date is not None and flight_update.date != flight.date:
         flight.date = flight_update.date
 
-    # 3. Update other fields if present
     if flight_update.route_id is not None:
         flight.route_id = flight_update.route_id
 
     if flight_update.scheduled_departure_time is not None:
-        flight.scheduled_departure_time = flight_update.scheduled_departure_time
+        old_dep = flight.scheduled_departure_time
+        new_dep = flight_update.scheduled_departure_time
+        flight.scheduled_departure_time = new_dep
+
+        db.query(CrewSchedule).filter(
+            CrewSchedule.flight_number == flight.flight_number,
+            CrewSchedule.date == flight.date,
+            CrewSchedule.scheduled_departure_time == old_dep,
+        ).update(
+            {CrewSchedule.scheduled_departure_time: new_dep},
+            synchronize_session=False,
+        )
+
 
     if flight_update.scheduled_arrival_time is not None:
         flight.scheduled_arrival_time = flight_update.scheduled_arrival_time
@@ -305,7 +415,6 @@ def update_flight(
     if flight_update.aircraft_registration is not None:
         flight.aircraft_registration = flight_update.aircraft_registration
 
-    # 4. Commit safely
     try:
         db.commit()
     except IntegrityError as e:
@@ -342,7 +451,6 @@ def delete_flight(
             detail=f"Flight {flight_number} on {flight_date} not found.",
         )
 
-    # No need to manually delete CrewSchedule — ON DELETE CASCADE will handle it
     db.delete(flight)
     db.commit()
 
@@ -357,7 +465,7 @@ def delete_flight(
 @router.post("/flights/{flight_number}/crew", response_model=CrewAssignmentResponse)
 def assign_crew_to_flight(
     flight_number: str,
-    flight_date: date,  # NEW
+    flight_date: date,
     payload: CrewAssignmentRequest,
     db: Session = Depends(get_db),
     current_user: UserInfo = Depends(require_scheduler),
@@ -386,16 +494,52 @@ def assign_crew_to_flight(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="crew_emails cannot be empty.",
         )
+    now = datetime.utcnow()
+    today = now.date()
+    if flight.date < today or (
+        flight.date == today and flight.scheduled_departure_time <= now.time()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot assign crew to flights in the past.",
+        )
 
     # Fetch all crew objects; ensure they all exist
-    crew_members = db.query(Crew).filter(Crew.email_id.in_(payload.crew_emails)).all()
+    unique_emails = sorted(set(payload.crew_emails))
+    crew_members = db.query(Crew).filter(Crew.email_id.in_(unique_emails)).all()
     found_emails = {c.email_id for c in crew_members}
-    missing = sorted(set(payload.crew_emails) - found_emails)
+    missing = sorted(set(unique_emails) - found_emails)
     if missing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"These crew emails do not exist: {', '.join(missing)}",
         )
+    if not any(c.is_pilot for c in crew_members):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one pilot is required for each flight.",
+        )
+    for c in crew_members:
+        overlap = (
+            db.query(CrewSchedule)
+            .join(Flight, (CrewSchedule.flight_number == Flight.flight_number)
+                        & (CrewSchedule.date == Flight.date))
+            .filter(
+                CrewSchedule.email_id == c.email_id,
+                Flight.date == flight.date,
+                Flight.scheduled_departure_time < flight.scheduled_arrival_time,
+                Flight.scheduled_arrival_time > flight.scheduled_departure_time,
+                Flight.flight_number != flight.flight_number,
+            )
+            .first()
+        )
+        if overlap:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Crew member {c.email_id} is already assigned to another flight in this time window.",
+            )
+    
+
 
     # Clear previous assignments for this flight
     db.query(CrewSchedule).filter(
