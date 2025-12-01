@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 
 class AircraftStatus(str, Enum):
@@ -76,6 +76,7 @@ class AirportResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
 class CrewUpdateRoleRequest(BaseModel):
     is_pilot: bool
 
@@ -88,3 +89,34 @@ class CrewResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PopularRouteResponse(BaseModel):
+    route_id: int
+    source_airport_code: str
+    destination_airport_code: str
+    approved_capacity: int
+
+
+class DashboardResponse(BaseModel):
+    most_popular_routes: list[PopularRouteResponse]
+    flights_in_air: int
+    aircraft_in_maintenance: int
+
+
+class UserCreateRequest(BaseModel):
+    user_type: str  # admin, crew, scheduler, engineer
+    email: EmailStr
+    name: str
+    phone: str | None = None
+    is_pilot: bool | None = None  # Required only for crew type
+
+
+class UserCreateResponse(BaseModel):
+    success: bool
+    message: str
+    email: str
+    user_type: str
+    default_password: str
+
+
