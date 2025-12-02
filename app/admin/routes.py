@@ -552,7 +552,7 @@ async def get_dashboard(db: Session = Depends(get_db),current_user: UserInfo = D
     
 
     today = date.today()
-    flights_in_air = db.query(Flight).filter(Flight.status == FlightStatus.IN_AIR).count()
+    flights_in_air = db.query(Aircraft).filter(Aircraft.status == AircraftStatus.ACTIVE).count()
     
     aircraft_in_maintenance = db.query(Aircraft).filter(
         Aircraft.status == AircraftStatus.MAINTENANCE
