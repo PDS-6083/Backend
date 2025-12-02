@@ -35,6 +35,7 @@ from app.engineer.schemas import (
     MaintenanceJobCreateRequest,
     AddEngineersToJobRequest,
     AircraftPartCreateRequest,
+    CloseMaintenanceJobRequest,
 )
 
 router = APIRouter(prefix="/api/engineer", tags=["engineer"])
@@ -560,3 +561,78 @@ def add_part_to_aircraft(
         model=part.model,
         manufacturing_date=part.manufacturing_date,
     )
+@router.post("/jobs/{job_id}/close", response_model=MaintenanceJobDetail)
+def close_maintenance_job(
+    job_id: int,
+    payload: CloseMaintenanceJobRequest,
+    db: Session = Depends(get_db),
+    current_user: UserInfo = Depends(require_engineer),
+):
+    """
+    Leader closes a maintenance job after it is finished.
+
+    - Only the job LEADER can close the job.
+    - Job must not already be COMPLETED or CANCELLED.
+    - Sets status to COMPLETED and checkout_date to now (UTC).
+    - Optionally updates remarks.
+    - Sets aircraft status back to ACTIVE.
+    """
+
+    # 1) Ensure job exists
+    mh = (
+        db.query(MaintenanceHistory)
+        .filter(MaintenanceHistory.job_id == job_id)
+        .first()
+    )
+    if not mh:
+        raise HTTPException(status_code=404, detail="Maintenance job not found.")
+
+    # 2) Validate current status
+    if mh.status == MaintenanceStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maintenance job is already completed.",
+        )
+    if mh.status == MaintenanceStatus.CANCELLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot complete a cancelled maintenance job.",
+        )
+
+    # 3) Ensure current engineer is LEADER on this job
+    leader_link = (
+        db.query(EngineerMaintenance)
+        .filter(
+            EngineerMaintenance.job_id == job_id,
+            EngineerMaintenance.engineer_email_id == current_user.email,
+        )
+        .first()
+    )
+
+    if not leader_link or leader_link.role != LEADER_ROLE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the job leader can close the maintenance job.",
+        )
+
+    # 4) Update job as completed
+    mh.status = MaintenanceStatus.COMPLETED
+    mh.checkout_date = datetime.utcnow()
+
+    # Optionally update remarks
+    if payload.remarks is not None:
+        mh.remarks = payload.remarks
+
+    # 5) Set aircraft status back to ACTIVE
+    aircraft = (
+        db.query(Aircraft)
+        .filter(Aircraft.registration_number == mh.registration_number)
+        .first()
+    )
+    if aircraft and aircraft.status == AircraftStatus.MAINTENANCE:
+        aircraft.status = AircraftStatus.ACTIVE
+
+    db.commit()
+
+    # 6) Return full job detail
+    return job_detail(job_id=job_id, db=db, current_user=current_user)
