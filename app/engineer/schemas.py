@@ -127,6 +127,9 @@ class MaintenanceJobCreateRequest(BaseModel):
     type: MaintenanceTypeEnum
     remarks: Optional[str] = None
 
+class CloseMaintenanceJobRequest(BaseModel):
+    remarks: Optional[str] = None
+
 class EngineerAssignmentItem(BaseModel):
     email_id: str
     role: str = "Engineer"
