@@ -14,8 +14,17 @@ class Settings(BaseSettings):
     port: int = 8000
     debug: bool = True
     
-    #todo: add production cors origins whilee deploying
-    cors_origins: List[str] = ["*"]
+    # CORS origins - for development, include common frontend ports
+    # When using credentials, you cannot use ["*"] - specify explicit origins
+    # Example: ["http://localhost:3000", "http://localhost:8001", "http://localhost:5173"]
+    cors_origins: List[str] = [
+        "http://localhost:3000",
+        "http://localhost:8001", 
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8001",
+        "http://127.0.0.1:5173",
+    ]
     
     cookie_secure: bool = False
     cookie_httponly: bool = True

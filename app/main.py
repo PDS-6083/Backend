@@ -15,10 +15,15 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Handle CORS: if origins is ["*"], we can't use credentials
+# So we need to conditionally set allow_credentials
+cors_origins = settings.cors_origins
+allow_creds = settings.cors_origins != ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=allow_creds,
     allow_methods=["*"],
     allow_headers=["*"],
 )
