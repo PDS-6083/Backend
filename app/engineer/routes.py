@@ -36,6 +36,7 @@ from app.engineer.schemas import (
     AddEngineersToJobRequest,
     AircraftPartCreateRequest,
     CloseMaintenanceJobRequest,
+    EngineerBasicInfo,
 )
 
 router = APIRouter(prefix="/api/engineer", tags=["engineer"])
@@ -636,3 +637,29 @@ def close_maintenance_job(
 
     # 6) Return full job detail
     return job_detail(job_id=job_id, db=db, current_user=current_user)
+
+# ----------------------
+# Engineers list
+# ----------------------
+
+# ----------------------
+# Engineers list (basic)
+# ----------------------
+
+@router.get("/engineers", response_model=List[EngineerBasicInfo])
+def list_engineers(
+    db: Session = Depends(get_db),
+    current_user: UserInfo = Depends(require_engineer),
+):
+    """
+    List all engineers (email + name only).
+    """
+    engineers = db.query(Engineer).order_by(Engineer.name.asc()).all()
+
+    return [
+        EngineerBasicInfo(
+            email_id=e.email_id,
+            name=e.name
+        )
+        for e in engineers
+    ]

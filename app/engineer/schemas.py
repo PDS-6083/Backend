@@ -143,3 +143,7 @@ class AircraftPartCreateRequest(BaseModel):
     part_manufacturer: str
     model: str
     manufacturing_date: date
+
+class EngineerBasicInfo(BaseModel):
+    email_id: str
+    name: str
