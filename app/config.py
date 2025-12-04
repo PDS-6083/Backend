@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     debug: bool = True
     
     #todo: add production cors origins whilee deploying
-    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:3001"]
+    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:3001", "*"]
     
     cookie_secure: bool = False
     cookie_httponly: bool = True
