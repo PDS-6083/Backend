@@ -21,3 +21,19 @@ delimiter ;
 
 call check_and_delete_aircraft('N12345');
 
+
+DELIMITER //
+
+CREATE TRIGGER auto_activate_aircraft_after_maintenance
+AFTER UPDATE ON maintenance_history
+FOR EACH ROW
+BEGIN
+    IF NEW.status = 'completed' AND (OLD.status IS NULL OR OLD.status != 'completed') THEN
+        UPDATE aircraft
+        SET status = 'active'
+        WHERE registration_number = NEW.registration_number
+          AND status = 'maintenance';
+    END IF;
+END //
+
+DELIMITER ;
