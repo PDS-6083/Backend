@@ -27,6 +27,7 @@ from app.scheduler.schemas import (
     CrewSummary,
     CrewAssignmentRequest,
     CrewAssignmentResponse,
+    CrewBasicInfo,
 )
 
 router = APIRouter(prefix="/api/scheduler", tags=["scheduler"])
@@ -737,3 +738,21 @@ def scheduler_dashboard(
         recent_flights=recent_flights,
         stats=stats,
     )
+
+@router.get("/crew-basic", response_model=List[CrewBasicInfo])
+def list_crew_basic(
+    db: Session = Depends(get_db),
+    current_user: UserInfo = Depends(require_scheduler),
+):
+    """
+    Return all crew members with only email + name.
+    Useful for dropdowns when assigning crew to flights.
+    """
+    crew_members = db.query(Crew).order_by(Crew.name).all()
+    return [
+        CrewBasicInfo(
+            email_id=c.email_id,
+            name=c.name,
+        )
+        for c in crew_members
+    ]

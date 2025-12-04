@@ -75,3 +75,7 @@ class CrewAssignmentRequest(BaseModel):
 class CrewAssignmentResponse(BaseModel):
     flight_number: str
     crew: List[CrewSummary]
+
+class CrewBasicInfo(BaseModel):
+    email_id: str
+    name: str
